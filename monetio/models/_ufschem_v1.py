@@ -59,6 +59,27 @@ def open_mfdataset(
         var_list.append("hgtsfc")
         var_list.append("delz")
 
+        # meteorological variable handling 
+        print("here")
+        if var_list is not None:
+            var_list = list(var_list)
+            windspeed_calc=False
+            print("here1")
+            if "windspeed" in var_list: 
+                for dep in ["ugrd", "vgrd"]:
+                    if dep not in var_list:
+                        var_list.append(dep)
+                var_list.remove("windspeed")
+                windspeed_calc=True
+            if "winddir" in var_list:
+                for dep in ["ugrd", "vgrd"]:
+                    if dep not in var_list:
+                        var_list.append(dep)
+                var_list.remove("winddir")
+                winddir_calc=True
+                
+        print("Will open these variables:", var_list)
+
         # Remove duplicates just in case:
         var_list = list(dict.fromkeys(var_list))
         list_remove_extra = list(dict.fromkeys(list_remove_extra))
@@ -135,7 +156,15 @@ def open_mfdataset(
                 dset[i] = dset[i] * dset["pres_pa_mid"] / dset["temperature_k"] / 287.05535
                 dset[i].attrs["units"] = r"$\mu g m^{-3}$"
 
+    # calc wind speed 
+    if windspeed_calc:
+        dset["windspeed"] = (dset["ugrd"]**2 + dset["vgrd"]**2)**0.5
+        dset["windspeed"].attrs["units"] = r"$\ms^{-1}$"
 
+    if winddir_calc:
+        dset["winddir"] = (270 - np.degrees(np.arctan2(dset["vgrd"], dset["ugrd"]))) % 360 # output in degrees rather than radians
+        dset["winddir"].attrs["units"] =r"$^{\circ}$"              
+        
     # Drop extra variables that were part of sum, but are not in original var_list
     # to save memory and computational time.
     # This is only revevant if var_list is provided
