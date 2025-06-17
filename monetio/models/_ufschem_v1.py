@@ -60,17 +60,21 @@ def open_mfdataset(
         var_list.append("delz")
 
         # meteorological variable handling 
-        print("here")
         if var_list is not None:
             var_list = list(var_list)
+            
             windspeed_calc=False
-            print("here1")
+            winddir_calc=False
+            rlh_calc=False
+            dpt_calc=False
+            
             if "windspeed" in var_list: 
                 for dep in ["ugrd", "vgrd"]:
                     if dep not in var_list:
                         var_list.append(dep)
                 var_list.remove("windspeed")
                 windspeed_calc=True
+                
             if "winddir" in var_list:
                 for dep in ["ugrd", "vgrd"]:
                     if dep not in var_list:
@@ -78,7 +82,27 @@ def open_mfdataset(
                 var_list.remove("winddir")
                 winddir_calc=True
                 
-        print("Will open these variables:", var_list)
+            if "rel_hum" in var_list:
+                # will need to make this an optional dependency if we proceed in using this. 
+                import metpy
+                from metpy.calc import relative_humidity_from_specific_humidity
+                from metpy.units import units
+                for dep in ["spfh"]:
+                    if dep not in var_list:
+                        var_list.append(dep)
+                var_list.remove("rel_hum")
+                rlh_calc=True
+                    
+            if "dewpoint" in var_list:
+                # will need to make this an optional dependency if we proceed in using this. 
+                import metpy
+                from metpy.calc import dewpoint_from_specific_humidity
+                from metpy.units import units
+                for dep in ["spfh"]:
+                    if dep not in var_list:
+                        var_list.append(dep)
+                var_list.remove("dewpoint")
+                dpt_calc=True
 
         # Remove duplicates just in case:
         var_list = list(dict.fromkeys(var_list))
@@ -156,14 +180,48 @@ def open_mfdataset(
                 dset[i] = dset[i] * dset["pres_pa_mid"] / dset["temperature_k"] / 287.05535
                 dset[i].attrs["units"] = r"$\mu g m^{-3}$"
 
+    # meteorological variable handling
     # calc wind speed 
     if windspeed_calc:
         dset["windspeed"] = (dset["ugrd"]**2 + dset["vgrd"]**2)**0.5
         dset["windspeed"].attrs["units"] = r"$\ms^{-1}$"
 
+    # calc winddir
     if winddir_calc:
         dset["winddir"] = (270 - np.degrees(np.arctan2(dset["vgrd"], dset["ugrd"]))) % 360 # output in degrees rather than radians
-        dset["winddir"].attrs["units"] =r"$^{\circ}$"              
+        dset["winddir"].attrs["units"] =r"$^{\circ}$"   
+
+    #calc relative humidity using metpy
+    if rlh_calc: 
+        # create a copy df to ensure the dset temp units dont all get converted
+        dset_rh = dset.copy()
+        rel_hum = (
+            metpy.calc.relative_humidity_from_specific_humidity(
+                dset_rh["surfpres_pa"] * units.Pa,  
+                dset_rh["temperature_k"] * units.kelvin, 
+                dset_rh["spfh"]  # needs to be unitless. kg/kg. 
+            ).metpy.convert_units("percent")
+        )
+
+        # metpy often attaches units. so, drop the units by using .values and ensure correct numpy array format
+        rel_hum_np = rel_hum.astype("float64").values
+        dset["rel_hum"] = (("time", "pfull", "grid_yt", "grid_xt"), rel_hum_np)
+        dset["rel_hum"].attrs["units"] = "%"
+    
+    #calc dewpoint using metpy    
+    if dpt_calc: 
+        # create a copy df to ensure the dset temp units dont all get converted
+        dset_dpt = dset.copy()
+        dewpoint = (
+            metpy.calc.dewpoint_from_specific_humidity(
+                dset_dpt["surfpres_pa"] * units.Pa,
+                dset_dpt["spfh"] * units("kg/kg")
+            )).metpy.convert_units("K")
+
+        # metpy often attaches units. so, drop the units by using .values and ensure correct numpy array format
+        dewpoint_np = dewpoint.astype("float64").values
+        dset["dewpoint"] = (("time", "pfull", "grid_yt", "grid_xt"), dewpoint_np)
+        dset["dewpoint"].attrs["units"] = "K"
         
     # Drop extra variables that were part of sum, but are not in original var_list
     # to save memory and computational time.
