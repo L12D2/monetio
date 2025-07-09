@@ -1,5 +1,6 @@
 from . import grids
-from .models import camx, cmaq, fv3chem, hysplit, hytraj, ncep_grib, pardump, prepchem, raqms, monetio
+#from .models import camx, cmaq, fv3chem, hysplit, hytraj, ncep_grib, pardump, prepchem, raqms, monetio
+from monetio import models
 from .obs import (
     aeronet,
     airnow,
